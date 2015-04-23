@@ -21,6 +21,8 @@ games_output_path = data_dir_path+'games.csv'
 
 ### KenPom
 
+print 'Getting KenPom data.'
+
 # Assemble KenPom data.
 kenpom = None
 kenpom_files = os.listdir(summary_dir_path)
@@ -43,11 +45,15 @@ for kp_filename in kenpom_files:
 
 ### Snapshots, Join
 
+print 'Getting snapshots.'
+
 # Load snapshot data.
 snapshots_dict = json.load(open(snapshots_path))
 
 # Container for features.
 game_features = None
+
+print 'Merging snapshots with KenPom data.'
 
 # Traverse snapshots.
 for snap in snapshots_dict:
@@ -69,7 +75,36 @@ for snap in snapshots_dict:
 	else:
 		game_features = game_features.append(snap_games)
 
+# Reset index for sequential index.
+game_features.reset_index(drop=True, inplace=True)
+
+### Aggregate Columns
+
+print 'Calculating aggregate columns.'
+
+# Get all team, opponent columns.
+team_cols     = [c for c in game_features.columns if c.startswith('team_')]
+opponent_cols = [c for c in game_features.columns if c.startswith('opponent_')]
+
+# Calculate diff and ratio col names.
+diff_col_names  = [c.replace('team_','diff_')  for c in team_cols]
+ratio_col_names = [c.replace('team_','ratio_') for c in team_cols]
+
+# Calculate differences and ratios.
+diff_vals  = np.array(game_features.ix[:,team_cols]) - np.array(game_features.ix[:,opponent_cols])
+ratio_vals = np.array(game_features.ix[:,team_cols]) / np.array(game_features.ix[:,opponent_cols])
+
+# Convert to DF.
+diff_vals_df  = pd.DataFrame(diff_vals,  columns=diff_col_names)
+ratio_vals_df = pd.DataFrame(ratio_vals, columns=ratio_col_names)
+
+# Append to game features.
+game_features = pd.concat((game_features,diff_vals_df),  axis=1)
+game_features = pd.concat((game_features,ratio_vals_df), axis=1)
+
 ### Game IDs
+
+print 'Generating game IDs.'
 
 # Get all date strings.
 g_dates = np.array(game_features.date, dtype=np.str)
@@ -102,6 +137,8 @@ game_features['game_group'] = game_group_1_indices
 
 ### Cleanup
 
+print 'Cleaning up: dummy-izing locations and reordering columns.'
+
 # Integerize dummy variables.
 for c, dt in zip(game_features.columns,game_features.dtypes):
 	if dt == 'bool':
@@ -122,11 +159,13 @@ main_game_columns = [
 		'conference','conference_tournament','ncaa_tournament','other_tournament'
 	]
 outcome_columns = ['points_for','points_against','win']
-# Add other columns.
-kp_columns = [c for c in game_features.columns if c.startswith('team_') or c.startswith('opponent_')]
+
+# Add Kenpom columns.
+kp_columns = [c for c in game_features.columns if c.startswith('team_') or c.startswith('opponent_') or c.startswith('diff_') or c.startswith('ratio_')]
 
 # Reorder columns.
 game_features = game_features[main_game_columns+list(location_dummies.columns)+kp_columns+outcome_columns]
 
 # Save.
+print 'Saving.'
 game_features.to_csv(games_output_path, index=False)
