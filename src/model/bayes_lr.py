@@ -14,6 +14,7 @@ def model_games (
     data,
     features=['team_Pythag'],
     coef_dists=None,
+    coef_dist_params=None,
     b0_params={'mu':0, 'tau':0.0003, 'value':0},
     err_params=[.5],
     default_coef_dist = pymc.Normal,
@@ -27,6 +28,7 @@ def model_games (
         data: Pandas dataframe of game information.
         features: String list of features from game data.
         coef_dists: Distribution for coefficients. Default: see default_coef_dist; usually Normal.
+        coef_dist_params: List of dictionaries that parameterize coeficient distributions.
         b0_params: Parameters for intercept ("b0"). Default: mean=0, precision=0.0003; initial value=0.
         err_params: Parameters list for Bernoulli-distribued error distribution. Default: p=0.5.
         default_coef_dist: Coefficient distributions.
@@ -50,11 +52,11 @@ def model_games (
     for i, f in enumerate(features):
         # Coefficient.
         # First start with the distribution. Use one if we've been given one; else use default.
-        coef_dist_type = default_coef_dist if coef_dists is None or coef_dists[i] is None or coef_dists[i][0] is None else coef_dists[i][0]
+        coef_dist_type = default_coef_dist if coef_dists is None or coef_dists[i] is None else coef_dists[i]
         # Now handle parameters.
-        coef_dist_params = default_coef_params if coef_dists is None or coef_dists[i] is None or coef_dists[i][1] is None else coef_dists[i][1]
+        this_coef_dist_params = default_coef_params if coef_dist_params is None or coef_dist_params[i] is None else coef_dist_params[i]
         # Now actually create the coefficient distribution
-        b[i] = coef_dist_type('b_'+f, **coef_dist_params)
+        b[i] = coef_dist_type('b_'+f, **this_coef_dist_params)
         # Data distribution.
         x[i] = pymc.Normal('x_'+f, 0, 1, value=np.array(data[f]), observed=True)
     
@@ -79,6 +81,27 @@ def model_games (
     
     # Return MCMC object.
     return mcmc
+
+### Ancillary Functions
+
+def feature_coefficients(model_mcmc, features):
+    """
+    Get a Numpy array of the features from a model MCMC object.
+    Inputs:
+        model_mcmc: sampled PyMC object with the given features.
+        features: List of features.
+    Returns:
+        Numpy array of features. Rows are trace history; columns are features starting with the intercept.
+    """
+    # Trace and feature info.
+    trace_len = model_mcmc.trace('b_0')[:].shape[0]
+    feat_len  = len(features)+1
+    # Container for coefficients.
+    coefs = np.empty((trace_len,feat_len))
+    # Extract trace for each coefficient and return.
+    for f_i, f in enumerate(['0']+features):
+        coefs[:,f_i] = model_mcmc.trace('b_'+f)[:]
+    return coefs
 
 ### Standalone Run
 
