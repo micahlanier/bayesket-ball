@@ -133,13 +133,13 @@ def mcmc_trace_means(model_mcmc, features, printMeans = False):
     Returns:
         np.array of K-fold cross validated scores
     """
-def mcmc_xval(X, features, K, thin):
+def mcmc_xval(X, features, K, thin, step_method_params=None, coef_dist_params=None):
     scores = []
     kf = KFold(len(X), 5,shuffle=True)
     for train, test in kf:
         X_train = X.ix[train]
         X_test = X.ix[test]
-        model_mcmc = model_games(data=X_train,features=features)
+        model_mcmc = model_games(data=X_train,features=features,step_method_params=step_method_params, coef_dist_params=coef_dist_params)
         model_mcmc.sample(10000,2000, thin)
         y_hat_raw, y_hat, y_hat_accuracy = game_predictions.predict_games(X_test, model_mcmc, features, 'pp')
         scores.append(y_hat_accuracy)
