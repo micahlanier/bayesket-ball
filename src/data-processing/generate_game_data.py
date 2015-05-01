@@ -7,6 +7,7 @@ import numpy as np
 import os
 import pandas as pd
 import re
+import sys
 
 ##### Setup
 
@@ -15,7 +16,14 @@ config_dir_path = '../../../config/'
 data_dir_path = '../../../data/'
 summary_dir_path = data_dir_path+'kenpom_summaries/'
 snapshots_path = data_dir_path+'team_snapshots.json'
-games_output_path = data_dir_path+'games.csv'
+
+# Evaluate arguments; determine paths. Run with "2015_tournament" as the first argument to restrict to 2014-2015 data pre-tournament.
+if len(sys.argv) == 2 and sys.argv[-1] == '2015_tournament':
+	games_output_path = data_dir_path+'games_2015_tournament.csv'
+	kp_pattern = r'summary15_pt.csv'
+else:
+	games_output_path = data_dir_path+'games.csv'
+	kp_pattern = r'summary\d{2}.csv'
 
 ##### Main Execution
 
@@ -29,7 +37,7 @@ kenpom_files = os.listdir(summary_dir_path)
 # Traverse all files.
 for kp_filename in kenpom_files:
 	# Ignore non-final scores. Maybe we'll do something with these later.
-	if not re.match(r'summary\d{2}.csv',kp_filename):
+	if not re.match(kp_pattern,kp_filename):
 		continue
 	# Get year.
 	kp_year = int('20'+kp_filename[7:9])
