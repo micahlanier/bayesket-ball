@@ -3,6 +3,10 @@
 # Libraries.
 import numpy as np
 import pymc
+from sklearn.cross_validation import KFold
+
+# Custom library
+import game_predictions
 
 ### Main Functionality
 
@@ -83,3 +87,37 @@ if __name__ == '__main__':
     main()
 def main():
     pass
+
+# Return the means of the pymc coefficients
+# model_mcmc: pymc model
+# features:   list of features in pymc
+def mcmc_trace_means(model_mcmc, features, printMeans = False):
+    means = []
+    for feature in features:
+        mean = model_mcmc.trace("b_"+feature)[:].mean()
+        if printMeans:
+            print "b_"+feature, mean
+        means.append(mean)
+    return np.array(means)
+
+# function to do cross validation
+    """
+    Inputs:
+        X: Pandas dataframe of game information.
+        features: String list of features from game data.
+        K: K for K-fold cross-validation
+        thin: thinning parameter for the sampling technique
+    Returns:
+        np.array of K-fold cross validated scores
+    """
+def mcmc_xval(X, features, K, thin):
+    scores = []
+    kf = KFold(len(X), 5,shuffle=True)
+    for train, test in kf:
+        X_train = X.ix[train]
+        X_test = X.ix[test]
+        model_mcmc = model_games(data=X_train,features=features)
+        model_mcmc.sample(10000,2000, thin)
+        y_hat_raw, y_hat, y_hat_accuracy = game_predictions.predict_games(X_test, model_mcmc, features, 'pp')
+        scores.append(y_hat_accuracy)
+    return np.array(scores)
