@@ -98,8 +98,11 @@ def simulate_tournament (bracket, team_stats, features, model_mcmc=None, coefs=N
         for t_i, t in enumerate(teams):
             outcomes[t_i,:] += c_outcome[t]
 
+    # Turn team list and outcomes into a data frame.
+    tournament_outcomes = pd.DataFrame(outcomes, index=teams, columns=['wins_round_'+str(rnd) for rnd in xrange(1,outcomes.shape[1]+1)])
+
     # Return teams and outcomes.
-    return teams, outcomes
+    return tournament_outcomes
 
 # Helper function for simulating a bracket for one set of coefficients.
 def simulate_bracket_coefs (bracket, team_stats, features, coefs):
