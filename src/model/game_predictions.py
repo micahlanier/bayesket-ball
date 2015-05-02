@@ -8,6 +8,11 @@ import pymc
 
 ### Main Functionality
 
+def logistic (s):
+    """
+    """
+    return 1 / (1+np.exp(-s))
+
 def predict_games (data, features, model_mcmc=None, coefs=None, method='map'):
     """
     Inputs:
@@ -21,34 +26,23 @@ def predict_games (data, features, model_mcmc=None, coefs=None, method='map'):
         Raw continuous predictions (in range [0,1]) for each game.
         Accuracy based on binary predictions (range [0,1]).
     """
-    # Argument assertions.
-    assert model_mcmc is not None or coefs is not None
 
-    # Trace and feature length.
-    trace_len = model_mcmc.trace('b_0')[:].shape[0] if coefs is None else len(coefs)
-    coef_samples = trace_len
-    feat_len  = len(features)+1
-    data_len  = len(data)
+    # Trace length.
+    coef_samples = model_mcmc.trace('b_0')[:].shape[0] if coefs is None else len(coefs)
     
     # Get coefficients.
     if coefs is None:
         coefs = bayes_lr.feature_coefficients(model_mcmc, features)
     # Use MAP if we need to.
     if method == 'map' and coefs.shape[0] > 1:
-        coefs = coefs.mean(axis=0).reshape((1,feat_len))
+        coefs = coefs.mean(axis=0).reshape((1,len(features)+1))
         coef_samples = 1
     
     # Get design matrix.
-    X = np.ones((data_len,feat_len))
-    for f_i, f in enumerate(features):
-        X[:,f_i+1] = data.ix[:,f]
-    
-    # Logistic function for win calculation.
-    logistic = lambda s: 1 / (1+np.exp(-s))
+    X = np.concatenate((np.ones((len(data),1)), data[features]), axis=1)
     
     # Estimate wins. Start with a wins container.
-    y_hat_raw = np.zeros((coef_samples,data_len))
-    y_hat     = np.zeros((coef_samples,data_len), dtype=np.int)
+    y_hat_raw = np.zeros((coef_samples,len(data)))
     # Traverse set of coefficients and assemble win estimates.
     for c_i, c in enumerate(coefs):
         y_hat_raw[c_i] = logistic((c.T*X).sum(axis=1))
@@ -57,9 +51,8 @@ def predict_games (data, features, model_mcmc=None, coefs=None, method='map'):
     
     # Compute accuracy by wins if they are available.
     y_hat_accuracy = None
-    if 'wins' in data:
-        y = np.array(data.win)
-        y_hat_accuracy = (y == y_hat).mean()
+    if 'win' in data:
+        y_hat_accuracy = (np.array(data.win) == y_hat).mean()
     
     return y_hat_raw, y_hat, y_hat_accuracy
 
