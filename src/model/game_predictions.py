@@ -68,13 +68,10 @@ def simulate_tournament (bracket, team_stats, features, model_mcmc=None, coef_tr
         model_mcmc: PyMC MCMC object. Trace length = simulations. Required if 'coef_trace' not supplied.
         coef_trace: Numpy array of coefficients; each column corresponds to an element of 'features'. Trace length = simulations. Required if 'model_mcmc' is not supplied.
     Returns:
-        TODO
+        Tournament outcomes as a data frame.
     """
 
     ### Setup
-
-    # Argument assertions.
-    assert model_mcmc is not None or coef_trace is not None
 
     # Get coefficients if we were not given them.
     if coef_trace is None:
@@ -82,11 +79,16 @@ def simulate_tournament (bracket, team_stats, features, model_mcmc=None, coef_tr
 
     ### Simulations
 
+    # Turn bracket into an array for easy manipulation.
+    if type(bracket) == list:
+        bracket = np.array(bracket)
+
     # Get sorted teams.
-    teams = np.array(bracket).ravel()
+    teams = bracket.copy().ravel()
     teams.sort()
     # Use a numpy array to hold our outcomes.
-    outcomes = np.zeros((len(teams),int(np.log2(len(teams)))))
+    # Log base 2 works for determining how many rounds we have.
+    outcomes = np.zeros((len(teams),int(np.log2(len(teams)))), dtype=np.int)
 
     # Iterate over trace and start one branch per set of coefficients.
     for c in coef_trace:
@@ -173,7 +175,7 @@ def simulate_bracket_coefs (bracket, team_stats, features, coefs):
 
     # Construct dictionary of results.
     results = dict((w,[1]) for w in winners)
-    results.update(dict((l,[0]*int(np.log2(len(bracket*2)))) for l in losers))
+    results.update(dict((l,[0]*int(np.log2(len(bracket)*2))) for l in losers))
 
     # Different behavior for tournament end.
     if len(winners) == 1:
@@ -182,7 +184,7 @@ def simulate_bracket_coefs (bracket, team_stats, features, coefs):
     else:
         # There are still further rounds to go.
         # Calculate next bracket.
-        next_bracket = winners.reshape((len(winners)/2,2)).tolist()
+        next_bracket = winners.reshape((len(winners)/2,2))
         # Simulate.
         next_results = simulate_bracket_coefs(next_bracket, team_stats, features, coefs)
         # Update our results and return.
