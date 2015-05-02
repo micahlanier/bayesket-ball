@@ -90,12 +90,27 @@ def simulate_tournament (bracket, team_stats, features, model_mcmc=None, coef_tr
     # Log base 2 works for determining how many rounds we have.
     outcomes = np.zeros((len(teams),int(np.log2(len(teams)))), dtype=np.int)
 
+    # Create "team" DF by merging teams with statistics.
+    teams_df = pd.DataFrame({'team':bracket.ravel()}).merge(team_stats, left_on='team', right_on='TeamName').drop(['TeamName'],axis=1)
+    teams_df.columns = ['team_'+c if c in team_stats.columns else c for c in teams_df.columns]
+    # teams_df = teams_df.reset_index().rename(columns={'index':'bracket_order'})
+    # Reuse for "opponent" DF.
+    opponents_df = teams_df.copy().rename(columns={'team':'opponent'})
+    opponents_df.columns = [c.replace('team_','opponent_') if c.startswith('team_') else c for c in opponents_df.columns]
+
+    # Generate location columns if in features. Append to the "team" DF.
+    if 'location_Neutral' in features:
+        teams_df['location_Neutral'] = 1 # Presume neutrality.
+    for c in ['location_Home','location_SemiAway','location_SemiHome']:
+        if c in features:
+            teams_df[c] = 0
+
     # Iterate over trace and start one branch per set of coefficients.
-    for c in coef_trace:
+    for coefs in coef_trace:
         # Ensure correct shape for coefficients.
-        c = c.reshape((1,c.shape[0]))
+        coefs = coefs.reshape((1,coefs.shape[0]))
         # Simulate.
-        c_outcome = simulate_bracket_coefs(bracket, team_stats, features, c)
+        c_outcome = simulate_bracket_coefs(bracket, teams_df, opponents_df, features, coefs)
         # Add simulation outcomes to main outcomes array.
         for t_i, t in enumerate(teams):
             outcomes[t_i,:] += c_outcome[t]
@@ -107,71 +122,63 @@ def simulate_tournament (bracket, team_stats, features, model_mcmc=None, coef_tr
     return tournament_outcomes
 
 # Helper function for simulating a bracket for one set of coefficients.
-def simulate_bracket_coefs (bracket, team_stats, features, coefs):
+def simulate_bracket_coefs (bracket, teams_df, opponents_df, features, coefs):
     """
+    Simulates a tournament, following all teams down the bracket to the championship, for a specific set of coefficients.
+    This function operates recursively.
+    Inputs:
+        bracket:      Array of first round matchups. Should be first round of the tournament with the bracket "unrolled" so that each row is a pair of teams.
+                      That is, the winner of game 1 will play the winner of game 2; 3 vs. 4; etc.
+        teams_df:     TODO
+        opponents_df: TODO
+        features:     List of features in data dataframe.
+        coef_set:     Numpy array of one set of coefficients; each column corresponds to an element of 'features'.
+    Returns:
+        TODO
     """
+
 
     ### Data
 
     # Start by randomly shuffling each pair of teams.
-    shuffled_bracket = []
-    for game in bracket:
+    shuffled_bracket = np.empty(bracket.shape, dtype=bracket.dtype)
+    for g_i, game in enumerate(bracket):
         flip = np.random.randint(2)
-        shuffled_bracket.append([game[flip],game[np.abs(flip-1)]])
+        shuffled_bracket[g_i,:] = [game[flip],game[np.abs(flip-1)]]
 
-    # Create DF.
-    games = pd.DataFrame(shuffled_bracket, columns=['team','opponent'])
-
-    # Also retain an array representation of games for checking winners later.
-    games_arr = np.array(games)
-
-    # Append presumed accurate location columns. Assume all locations neutral.
-    games['location_Neutral'] = 1
-    for c in ['location_Home','location_SemiAway','location_SemiHome']:
-        games[c] = 0
-
-    # Trim team stats to only the teams represented.
-    team_stats = team_stats[(team_stats.TeamName.isin(games.team)) | (team_stats.TeamName.isin(games.opponent))]
-
-    # Merge with KenPom data.
-    # Merge teams.
-    games = games.merge(team_stats, left_on='team', right_on='TeamName')
-    games.drop('TeamName', axis=1, inplace=True)
-    games.columns = ['team_'+c if (c in team_stats.columns and c != 'year') else c for c in games.columns]
-    # Merge opponents.
-    games = games.merge(team_stats, left_on='opponent', right_on='TeamName')
-    games.drop('TeamName', axis=1, inplace=True)
-    games.columns = ['opponent_'+c if (c in team_stats.columns and c != 'year') else c for c in games.columns]
+    # Get team and opponent.
+    games_df = pd.concat((
+            teams_df[teams_df.team.isin(shuffled_bracket[:,0])].reset_index(drop=True),
+            opponents_df[opponents_df.opponent.isin(shuffled_bracket[:,1])].reset_index(drop=True)
+        ),
+        axis=1
+    )
 
     # Calculate aggregate columns
     # Get all team, opponent columns.
-    team_cols     = [c for c in games.columns if c.startswith('team_')]
-    opponent_cols = [c for c in games.columns if c.startswith('opponent_')]
+    team_cols     = [c for c in games_df.columns if c.startswith('team_')]
+    opponent_cols = [c for c in games_df.columns if c.startswith('opponent_')]
     # Calculate diff and ratio col names.
     diff_col_names  = [c.replace('team_','diff_')  for c in team_cols]
     ratio_col_names = [c.replace('team_','ratio_') for c in team_cols]
-    # Calculate differences and ratios.
-    diff_vals  = np.array(games.ix[:,team_cols]) - np.array(games.ix[:,opponent_cols])
-    ratio_vals = np.array(games.ix[:,team_cols]) / np.array(games.ix[:,opponent_cols])
-    # Convert to DF.
-    diff_vals_df  = pd.DataFrame(diff_vals,  columns=diff_col_names)
-    ratio_vals_df = pd.DataFrame(ratio_vals, columns=ratio_col_names)
+    # Calculate differences and ratios as DF.
+    diff_vals_df  = pd.DataFrame(np.array(games_df.ix[:,team_cols]) - np.array(games_df.ix[:,opponent_cols]),  columns=diff_col_names)
+    ratio_vals_df = pd.DataFrame(np.array(games_df.ix[:,team_cols]) / np.array(games_df.ix[:,opponent_cols]), columns=ratio_col_names)
     # Append to game features.
-    games = pd.concat((games,diff_vals_df),  axis=1)
-    games = pd.concat((games,ratio_vals_df), axis=1)
+    games_df = pd.concat((games_df,diff_vals_df,ratio_vals_df),  axis=1)
 
     ### Simulations
 
     # Simulate games.
-    _1, y_hat, _2 = predict_games(data=games, features=features, coefs=coefs, method='map')
+    _1, y_hat, _2 = predict_games(data=games_df, features=features, coefs=coefs, method='map')
 
     # Manipulate win/loss data for indexing.
     winners_losers = y_hat.reshape((y_hat.shape[1],1))
     winners_losers = np.concatenate((winners_losers,(np.abs(winners_losers-1))), axis=1)
     winners_losers = winners_losers.ravel()
     # Get winners/losers.
-    winners = games_arr.ravel()[winners_losers == 1]
-    losers  = games_arr.ravel()[winners_losers == 0]
+    winners = shuffled_bracket.ravel()[winners_losers == 1]
+    losers  = shuffled_bracket.ravel()[winners_losers == 0]
 
     # Construct dictionary of results.
     results = dict((w,[1]) for w in winners)
@@ -185,8 +192,11 @@ def simulate_bracket_coefs (bracket, team_stats, features, coefs):
         # There are still further rounds to go.
         # Calculate next bracket.
         next_bracket = winners.reshape((len(winners)/2,2))
+        # Calculate next set of statistics.
+        next_teams_df     = teams_df[teams_df.team.isin(winners)].copy()
+        next_opponents_df = opponents_df[opponents_df.opponent.isin(winners)].copy()
         # Simulate.
-        next_results = simulate_bracket_coefs(next_bracket, team_stats, features, coefs)
+        next_results = simulate_bracket_coefs(next_bracket, teams_df, opponents_df, features, coefs)
         # Update our results and return.
         for t in next_results.keys():
             results[t] = results[t]+next_results[t]
