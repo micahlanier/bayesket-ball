@@ -10,6 +10,7 @@ import pymc
 
 def logistic (s):
     """
+    Sigmoid function. Just takes in a scalar and applies formula to it.
     """
     return 1 / (1+np.exp(-s))
 
@@ -88,7 +89,7 @@ def simulate_tournament (bracket, team_stats, features, model_mcmc=None, coef_tr
     teams.sort()
     # Use a numpy array to hold our outcomes.
     # Log base 2 works for determining how many rounds we have.
-    outcomes = np.zeros((len(teams),int(np.log2(len(teams)))), dtype=np.int)
+    round_outcomes = np.zeros((len(teams),int(np.log2(len(teams)))), dtype=np.int)
 
     # Create "team" DF by merging teams with statistics.
     teams_df = pd.DataFrame({'team':bracket.ravel()}).merge(team_stats, left_on='team', right_on='TeamName').drop(['TeamName'],axis=1)
@@ -105,21 +106,34 @@ def simulate_tournament (bracket, team_stats, features, model_mcmc=None, coef_tr
         if c in features:
             teams_df[c] = 0
 
+    # Matchup information containers.
+    matchups = []
+
     # Iterate over trace and start one branch per set of coefficients.
     for coefs in coef_trace:
         # Ensure correct shape for coefficients.
         coefs = coefs.reshape((1,coefs.shape[0]))
         # Simulate.
-        c_outcome = simulate_bracket_coefs(bracket, teams_df, opponents_df, features, coefs)
+        coef_matchups, coefs_round_outcomes = simulate_bracket_coefs(bracket, teams_df, opponents_df, features, coefs)
+        # Add matchups to container.
+        matchups = matchups + coef_matchups
         # Add simulation outcomes to main outcomes array.
         for t_i, t in enumerate(teams):
-            outcomes[t_i,:] += c_outcome[t]
+            round_outcomes[t_i,:] += coefs_round_outcomes[t]
+
+    # Transform matchup information to DF.
+    matchups_df = pd.DataFrame({
+            'winner':  np.concatenate([r['winners'] for r in matchups]),
+            'loser':   np.concatenate([r['losers']  for r in matchups]),
+            'round_of': np.concatenate([np.repeat(r['round_of'],r['round_of']/2) for r in matchups]),
+            'count': 1
+        }).groupby(['winner','loser','round_of']).agg(np.sum).reset_index()
 
     # Turn team list and outcomes into a data frame.
-    tournament_outcomes = pd.DataFrame(outcomes, index=teams, columns=['wins_round_'+str(rnd) for rnd in xrange(1,outcomes.shape[1]+1)])
+    team_round_outcomes = pd.DataFrame(round_outcomes, index=teams, columns=['wins_round_'+str(rnd) for rnd in xrange(1,round_outcomes.shape[1]+1)])
 
     # Return teams and outcomes.
-    return tournament_outcomes
+    return matchups_df, team_round_outcomes
 
 # Helper function for simulating a bracket for one set of coefficients.
 def simulate_bracket_coefs (bracket, teams_df, opponents_df, features, coefs):
@@ -129,14 +143,13 @@ def simulate_bracket_coefs (bracket, teams_df, opponents_df, features, coefs):
     Inputs:
         bracket:      Array of first round matchups. Should be first round of the tournament with the bracket "unrolled" so that each row is a pair of teams.
                       That is, the winner of game 1 will play the winner of game 2; 3 vs. 4; etc.
-        teams_df:     TODO
-        opponents_df: TODO
+        teams_df:     Bracket teams and statistics.
+        opponents_df: The above, but with different column labels.
         features:     List of features in data dataframe.
         coef_set:     Numpy array of one set of coefficients; each column corresponds to an element of 'features'.
     Returns:
         TODO
     """
-
 
     ### Data
 
@@ -181,13 +194,20 @@ def simulate_bracket_coefs (bracket, teams_df, opponents_df, features, coefs):
     losers  = shuffled_bracket.ravel()[winners_losers == 0]
 
     # Construct dictionary of results.
-    results = dict((w,[1]) for w in winners)
-    results.update(dict((l,[0]*int(np.log2(len(bracket)*2))) for l in losers))
+    round_results = dict((w,[1]) for w in winners)
+    round_results.update(dict((l,[0]*int(np.log2(len(bracket)*2))) for l in losers))
+
+    # Construct matchup information.
+    matchups = [{
+        'winners':  winners,
+        'losers':   losers,
+        'round_of': len(bracket)*2
+    }]
 
     # Different behavior for tournament end.
     if len(winners) == 1:
         # We just simulated the championship. Return the outcome.
-        return results
+        return matchups, round_results
     else:
         # There are still further rounds to go.
         # Calculate next bracket.
@@ -196,11 +216,14 @@ def simulate_bracket_coefs (bracket, teams_df, opponents_df, features, coefs):
         next_teams_df     = teams_df[teams_df.team.isin(winners)].copy()
         next_opponents_df = opponents_df[opponents_df.opponent.isin(winners)].copy()
         # Simulate.
-        next_results = simulate_bracket_coefs(next_bracket, teams_df, opponents_df, features, coefs)
-        # Update our results and return.
-        for t in next_results.keys():
-            results[t] = results[t]+next_results[t]
-        return results
+        next_matchups, next_round_results = simulate_bracket_coefs(next_bracket, teams_df, opponents_df, features, coefs)
+        # Update round results.
+        for t in next_round_results.keys():
+            round_results[t] = round_results[t]+next_round_results[t]
+        # Augment matchup information.
+        matchups = matchups + next_matchups
+        # Return both.
+        return matchups, round_results
 
 ### Standalone Run
 
