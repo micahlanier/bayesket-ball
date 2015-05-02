@@ -57,7 +57,7 @@ def predict_games (data, features, model_mcmc=None, coefs=None, method='map'):
     return y_hat_raw, y_hat, y_hat_accuracy
 
 # Main function for simulating a tournament.
-def simulate_tournament (bracket, team_stats, features, model_mcmc=None, coefs=None):
+def simulate_tournament (bracket, team_stats, features, model_mcmc=None, coef_trace=None):
     """
     Simulates a tournament, following all teams down the bracket to the championship.
     Inputs:
@@ -65,8 +65,8 @@ def simulate_tournament (bracket, team_stats, features, model_mcmc=None, coefs=N
                     That is, the winner of game 1 will play the winner of game 2; 3 vs. 4; etc.
         team_stats: Dataframe with team statistics.
         features:   List of features in data dataframe.
-        model_mcmc: PyMC MCMC object. Trace length = simulations. Required if 'coefs' not supplied.
-        coefs:      Numpy array of coefficients; each column corresponds to an element of 'features'. Trace length = simulations. Required if 'model_mcmc' is not supplied.
+        model_mcmc: PyMC MCMC object. Trace length = simulations. Required if 'coef_trace' not supplied.
+        coef_trace: Numpy array of coefficients; each column corresponds to an element of 'features'. Trace length = simulations. Required if 'model_mcmc' is not supplied.
     Returns:
         TODO
     """
@@ -74,11 +74,11 @@ def simulate_tournament (bracket, team_stats, features, model_mcmc=None, coefs=N
     ### Setup
 
     # Argument assertions.
-    assert model_mcmc is not None or coefs is not None
+    assert model_mcmc is not None or coef_trace is not None
 
     # Get coefficients if we were not given them.
-    if coefs is None:
-        coefs = bayes_lr.feature_coefficients(model_mcmc, features)
+    if coef_trace is None:
+        coef_trace = bayes_lr.feature_coefficients(model_mcmc, features)
 
     ### Simulations
 
@@ -89,7 +89,7 @@ def simulate_tournament (bracket, team_stats, features, model_mcmc=None, coefs=N
     outcomes = np.zeros((len(teams),int(np.log2(len(teams)))))
 
     # Iterate over trace and start one branch per set of coefficients.
-    for c in coefs:
+    for c in coef_trace:
         # Ensure correct shape for coefficients.
         c = c.reshape((1,c.shape[0]))
         # Simulate.
