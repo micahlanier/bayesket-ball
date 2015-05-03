@@ -102,7 +102,7 @@ def simulate_tournament (bracket, team_stats, features, model_mcmc=None, coef_tr
     # Generate location columns if in features. Append to the "team" DF.
     if 'location_Neutral' in features:
         teams_df['location_Neutral'] = 1 # Presume neutrality.
-    for c in ['location_Home','location_SemiAway','location_SemiHome']:
+    for c in ['location_Home','location_Away','location_SemiAway','location_SemiHome']:
         if c in features:
             teams_df[c] = 0
 
