@@ -119,12 +119,15 @@ def main():
 # features:   list of features in pymc
 def mcmc_trace_means(model_mcmc, features, printMeans = False):
     means = []
+    stds = []
     for feature in features:
         mean = model_mcmc.trace("b_"+feature)[:].mean()
+        std = model_mcmc.trace("b_"+feature)[:].std()
         if printMeans:
-            print "b_"+feature, mean
+            print "b_"+feature, mean, std
         means.append(mean)
-    return np.array(means)
+        stds.append(std)
+    return np.array(means), np.array(stds)
 
 # function to do cross validation
     """
