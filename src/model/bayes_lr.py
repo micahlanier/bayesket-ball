@@ -77,7 +77,10 @@ def model_games (
     # Configure step methods.
     for var in list(b)+[b0,err]:
         coef_step_method_params = default_step_method_params if step_method_params is None or step_method_params[i] is None else step_method_params[i]
-        mcmc.use_step_method(step_method, stochastic=var, **default_step_method_params)
+        if step_method == pymc.Slicer:
+            mcmc.use_step_method(step_method, stochastic=var)
+        else:
+            mcmc.use_step_method(step_method, stochastic=var, **default_step_method_params)
     
     # Return MCMC object.
     return mcmc
