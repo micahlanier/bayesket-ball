@@ -4,6 +4,7 @@
 import numpy as np
 import pymc
 from sklearn.cross_validation import KFold
+import matplotlib, matplotlib.pyplot as plt
 
 # Custom library
 import game_predictions
@@ -129,7 +130,7 @@ def mcmc_trace_means(model_mcmc, features, printMeans = False):
         stds.append(std)
     return np.array(means), np.array(stds)
 
-# function to do cross validation
+# function to perform cross validation
     """
     Inputs:
         X: Pandas dataframe of game information.
@@ -150,3 +151,53 @@ def mcmc_xval(X, features, K, thin, step_method_params=None, coef_dist_params=No
         y_hat_raw, y_hat, y_hat_accuracy = game_predictions.predict_games(X_test, model_mcmc, features, 'pp')
         scores.append(y_hat_accuracy)
     return np.array(scores)
+
+# Function to store geweke scores from pymc's geweke function
+    """
+    Inputs:
+        model_mcmc: pymc mcmc model object
+        features: String list of features from game data.
+    Returns:
+        np.array of coefficients' geweke scores
+    """
+def geweke_statistics(model_mcmc, features):
+    geweke_scores = []
+    # Geweke Test
+    for feature in features:
+        print feature
+        scores = pymc.geweke(model_mcmc.trace('b_'+feature)[:])
+        geweke_scores.append(scores)
+    return geweke_scores
+
+# function to perform cross validation
+    """
+    Inputs:
+        twoD_list: list of geweke score
+    Returns:
+        np.array of geweke scores
+    """
+def unravel_list(twoD_list):
+    result = np.zeros((np.shape(twoD_list)[1], np.shape(twoD_list)[0]))
+    for i in xrange(len(twoD_list)):
+        result[0][i] = twoD_list[i][0]
+        result[1][i] = twoD_list[i][1]
+    return result
+
+# Function to plot geweke scores on all one graph
+    """
+    Inputs:
+        geweke_scores: np.array retruned from fxn geweke_statistics
+        features: String list of features from game data.
+    """
+def plot_Geweke(geweke_scores, features):
+    plt.figure(figsize=[8,5])
+    for i in xrange(len(geweke_scores)):
+#         geweke_MC = Geweke(model_mcmc.trace("b_"+feature)[:], 10, 1000)
+        geweke_score_x, geweke_score_y = unravel_list(geweke_scores[i])
+        plt.plot(geweke_score_x, geweke_score_y, label=features[i])
+    plt.axhline(y=2,color = 'k',linestyle='--')
+    plt.axhline(y=-2,color = 'k',linestyle='--')
+
+    plt.legend(loc='upper center', bbox_to_anchor=(0.5, -0.05),
+          fancybox=True, shadow=False, ncol=3)
+    plt.show()
