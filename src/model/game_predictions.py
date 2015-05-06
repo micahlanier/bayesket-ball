@@ -4,7 +4,7 @@
 import bayes_lr
 import numpy as np
 import pandas as pd
-import pymc
+import scipy as sp, scipy.stats
 
 ### Main Functionality
 
@@ -58,16 +58,17 @@ def predict_games (data, features, model_mcmc=None, coefs=None, method='map'):
     return y_hat_raw, y_hat, y_hat_accuracy
 
 # Main function for simulating a tournament.
-def simulate_tournament (bracket, team_stats, features, model_mcmc=None, coef_trace=None):
+def simulate_tournament (bracket, team_stats, features, deterministic=False, model_mcmc=None, coef_trace=None):
     """
     Simulates a tournament, following all teams down the bracket to the championship.
     Inputs:
-        bracket:    List of first round matchups. Should be first round of the tournament with the bracket "unrolled".
-                    That is, the winner of game 1 will play the winner of game 2; 3 vs. 4; etc.
-        team_stats: Dataframe with team statistics.
-        features:   List of features in data dataframe.
-        model_mcmc: PyMC MCMC object. Trace length = simulations. Required if 'coef_trace' not supplied.
-        coef_trace: Numpy array of coefficients; each column corresponds to an element of 'features'. Trace length = simulations. Required if 'model_mcmc' is not supplied.
+        bracket:       List of first round matchups. Should be first round of the tournament with the bracket "unrolled".
+                       That is, the winner of game 1 will play the winner of game 2; 3 vs. 4; etc.
+        team_stats:    Dataframe with team statistics.
+        features:      List of features in data dataframe.
+        deterministic: Declare the most likely winner as the winner if true; else use a Bernoulli trial to simulate each game.
+        model_mcmc:    PyMC MCMC object. Trace length = simulations. Required if 'coef_trace' not supplied.
+        coef_trace:    Numpy array of coefficients; each column corresponds to an element of 'features'. Trace length = simulations. Required if 'model_mcmc' is not supplied.
     Returns:
         Tournament outcomes as a data frame.
     """
@@ -114,7 +115,7 @@ def simulate_tournament (bracket, team_stats, features, model_mcmc=None, coef_tr
         # Ensure correct shape for coefficients.
         coefs = coefs.reshape((1,coefs.shape[0]))
         # Simulate.
-        coef_matchups, coefs_round_outcomes = simulate_bracket_coefs(bracket, teams_df, opponents_df, features, coefs)
+        coef_matchups, coefs_round_outcomes = simulate_bracket_coefs(bracket, teams_df, opponents_df, features, coefs, deterministic)
         # Add matchups to container.
         matchups = matchups + coef_matchups
         # Add simulation outcomes to main outcomes array.
@@ -136,17 +137,18 @@ def simulate_tournament (bracket, team_stats, features, model_mcmc=None, coef_tr
     return matchups_df, team_round_outcomes
 
 # Helper function for simulating a bracket for one set of coefficients.
-def simulate_bracket_coefs (bracket, teams_df, opponents_df, features, coefs):
+def simulate_bracket_coefs (bracket, teams_df, opponents_df, features, coefs, deterministic):
     """
     Simulates a tournament, following all teams down the bracket to the championship, for a specific set of coefficients.
     This function operates recursively.
     Inputs:
-        bracket:      Array of first round matchups. Should be first round of the tournament with the bracket "unrolled" so that each row is a pair of teams.
-                      That is, the winner of game 1 will play the winner of game 2; 3 vs. 4; etc.
-        teams_df:     Bracket teams and statistics.
-        opponents_df: The above, but with different column labels.
-        features:     List of features in data dataframe.
-        coef_set:     Numpy array of one set of coefficients; each column corresponds to an element of 'features'.
+        bracket:       Array of first round matchups. Should be first round of the tournament with the bracket "unrolled" so that each row is a pair of teams.
+                       That is, the winner of game 1 will play the winner of game 2; 3 vs. 4; etc.
+        teams_df:      Bracket teams and statistics.
+        opponents_df:  The above, but with different column labels.
+        features:      List of features in data dataframe.
+        coef_set:      Numpy array of one set of coefficients; each column corresponds to an element of 'features'.
+        deterministic: Declare the most likely winner as the winner if true; else use a Bernoulli trial to simulate each game.
     Returns:
         TODO
     """
@@ -183,10 +185,20 @@ def simulate_bracket_coefs (bracket, teams_df, opponents_df, features, coefs):
     ### Simulations
 
     # Simulate games.
-    _1, y_hat, _2 = predict_games(data=games_df, features=features, coefs=coefs, method='map')
+    y_hat_raw, y_hat, _2 = predict_games(data=games_df, features=features, coefs=coefs, method='map')
 
-    # Manipulate win/loss data for indexing.
-    winners_losers = y_hat.reshape((y_hat.shape[1],1))
+    # Simulate winners/losers if needed. Otherwise just reshape existing results.
+    if deterministic:
+        winners_losers = y_hat.reshape((y_hat.shape[1],1))
+    else:
+        game_outcomes  = sp.stats.binom.rvs(n=1, p=y_hat_raw.ravel())
+        if type(game_outcomes) == int:
+            game_outcomes = np.array(game_outcomes)
+        winners_losers = game_outcomes.reshape((y_hat_raw.shape[1],1))
+        # Note: could make this even more random and use averages, but that leads to branches blowing up.
+        # Every simulation leads to lots more simulations.
+
+    # Add loser information for easy indexing.
     winners_losers = np.concatenate((winners_losers,(np.abs(winners_losers-1))), axis=1)
     winners_losers = winners_losers.ravel()
     # Get winners/losers.
@@ -216,7 +228,7 @@ def simulate_bracket_coefs (bracket, teams_df, opponents_df, features, coefs):
         next_teams_df     = teams_df[teams_df.team.isin(winners)].copy()
         next_opponents_df = opponents_df[opponents_df.opponent.isin(winners)].copy()
         # Simulate.
-        next_matchups, next_round_results = simulate_bracket_coefs(next_bracket, teams_df, opponents_df, features, coefs)
+        next_matchups, next_round_results = simulate_bracket_coefs(next_bracket, teams_df, opponents_df, features, coefs, deterministic)
         # Update round results.
         for t in next_round_results.keys():
             round_results[t] = round_results[t]+next_round_results[t]
