@@ -31,9 +31,9 @@ rf0 = randomForest(f,data=train,ntree=500,importance=T)
 rf0_importance = sort(importance(rf0,type=1)[,1], decreasing=F)
 if (save) {
   filename = "Plots/RF Importance.png"
-  png(filename,height=200,width=300,pointsize=9)
+  png(filename,height=200*1.44,width=300*1.44,pointsize=12)
 }
-par(mar=c(4, 9, 2, 2), oma=rep(0, 4), cex=0.8)
+par(mar=c(4, 9, 2, 2), oma=rep(0, 4),cex=1.1)
 barplot(rf0_importance,las=1,horiz=T,
         main='Random Forest Predictor Importance',xlab='Importance')
 if (save) dev.off()
@@ -122,10 +122,10 @@ if (run) {
 # plot scores
 if (save) {
   filename = "Plots/XVal Scores.png"
-  png(filename,height=200,width=300,pointsize=10)
+  png(filename,height=200*1.44,width=300*1.44,pointsize=12)
 }
 par(mar=c(4, 4, 2, 2), oma=rep(0, 4), cex=1)
-plot(scores,type='b',pch=20,
+plot(scores,type='b',pch=20, ylim=c(0.74, 0.78),
      main='10-Fold Cross-Validation Results',
      ylab='Cross-Validation Score',
      xlab='Number of Most Important Predictors')
